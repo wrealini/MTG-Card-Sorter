@@ -1,10 +1,30 @@
 from guizero import Window, Text, CheckBox, Slider, PushButton
 import arm
 
+#region Test Window Summary
+
+# This module creates the test window used to test this device's arm.
+
+# The leftmost image displays the current empty tray image and has
+# a button beneath it to retake this image and set a new hash.
+
+# Sliders are used to adjust the arm's horizontal and vertical
+# positions, and CheckBoxes are used to activate and deactivate
+# the servo that controls the vertical position and the vacuum
+# pump used to pick up cards.
+
+# At the bottom of the window is a Button to minimize this window.
+#endregion
+
+
+#region Constants and Variables
+
 w = None
+#endregion
+
+#region Fundamental Functions
 
 def update():
-    print("update...")
     # Adjust horizontal position.
     if arm.position != w.s1.value:
         arm.go_to(w.s1.value)
@@ -15,8 +35,7 @@ def update():
         arm.set_servo(0)
     # Toggle vacuum on and off.
     arm.set_vacuum(w.cb2.value)
-    print("done")
-
+#endregion
 
 class TestWindow(Window):
     s1 = None
@@ -40,15 +59,15 @@ class TestWindow(Window):
         self.s1.width = 500
         Text(self, text="Vertical")
         self.cb1 = CheckBox(self, text="Servo On")
-        self.s2 = Slider(self, start=1200, end=1950)
+        self.s2 = Slider(self, start=1000, end=2000)
         self.s2.width = 500
-        self.s2.value = 1950
+        self.s2.value = 2000
         self.cb2 = CheckBox(self, text="Vacuum On")
         def close_window():
             self.hide()
             self.cancel(update)
             self.s1.value = 0
-            self.s2.value = 1950
+            self.s2.value = 2000
             self.cb1.value = 0
             self.cb2.value = 0
             arm.set_vacuum(0)

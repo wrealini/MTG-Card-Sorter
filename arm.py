@@ -2,6 +2,9 @@ import RPi.GPIO as GPIO
 from time import sleep
 from os import system
 import pigpio
+import numpy
+
+#region Arm Summary
 
 # This module controls the robotic arm of the card sorter.
 
@@ -12,10 +15,11 @@ import pigpio
 # This arm moves 1 inch in 157 steps.
 
 # The suction cup on this arm reaches its highest point at
-# PWM 1950 and its lowest point at PWM 1550. It moves 4/16
-# of an inch forward when descending from PWM 1950 to 1775
+# PWM 1650 and its lowest point at PWM 1100. It moves 4/16
+# of an inch forward when descending from PWM 1650 to 1550
 # and 4/16 of an inch backward when descending from PWM
-# 1775 to 1550.
+# 1550 to 1100.
+#endregion
 
 
 #region Constants and Variables
@@ -67,19 +71,19 @@ def set_vacuum(on):
 
 def reset():
     global position
-    position = 0
     set_vacuum(0)
-    set_servo(1950)
+    set_servo(2000)
     while GPIO.input(29):
         step_backward()
     step_forward()
     set_step(0, 0, 0, 0)
+    position = 0
 
 def forward(steps):
     global position
     for n in range(steps):
         step_forward()
-        if position > 1736:
+        if position > 1730:
             break
     set_step(0, 0, 0, 0)
 
@@ -92,6 +96,7 @@ def backward(steps):
             position = 0
             break
     set_step(0, 0, 0, 0)
+            
 #endregion
 
 #region Complex Functions
@@ -108,37 +113,53 @@ def move_card(start, finish):
         return None
 
     if start is 1:
-        go_to(236)
+        go_to(230)
     elif start is 2:
-        go_to(736)
+        go_to(730)
     elif start is 3:
-        go_to(1236)
+        go_to(1230)
     elif start is 4:
-        go_to(1736)
+        go_to(1730)
     else:
         return None
 
-    set_servo(1950)
-    sleep(1)
-    set_servo(1500)
-    sleep(1)
+    m = 1930
+    e = 600
+    p = 440
+    for n in range(e):
+        set_servo(m - n)
+        sleep(0.0025)
+        if GPIO.input(18):
+            e = n
+            print(m - e - p)
+            if((m - e - p) < 1000):
+                set_servo(1000)
+            else:
+                set_servo(m - e - p)
+            break
     set_vacuum(1)
-    backward(44)
-    sleep(1)
-    set_servo(1950)
-    sleep(1)
-
+    sleep(6)
+    for n in range(e + p):
+        set_servo(m - e - p + n)
+        sleep(0.005)
+        if n > p and n % 12 == 0:
+            backward(1)
+            
+    b = -20
     if finish is 1:
-        go_to(236)
+        go_to(230+b)
     elif finish is 2:
-        go_to(736)
+        go_to(730+b)
     elif finish is 3:
-        go_to(1236)
+        go_to(1230+b)
     elif finish is 4:
-        go_to(1736)
-
+        go_to(1730+b)
+    
+    for n in range(150):
+        set_servo(m-n)
+        sleep(0.005)
     set_vacuum(0)
-    sleep(1)
+    sleep(3)
 
     reset()
 #endregion
@@ -158,8 +179,11 @@ set_step(0, 0, 0, 0)
 # Setup vacuum pump motor output.
 GPIO.setup(22, GPIO.OUT)
 set_vacuum(0)
+# Setup vertical arm touch sensor.
+GPIO.setup(18, GPIO.IN, pull_up_down = GPIO.PUD_DOWN)
 # Setup vertical servo motor PWM output.
 system("sudo killall pigpiod")
+sleep(3)
 system("sudo pigpiod")
 sleep(3)
 pi = pigpio.pi()

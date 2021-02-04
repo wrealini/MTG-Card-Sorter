@@ -6,60 +6,75 @@ import numpy as np
 import math
 import sys
 
-height_min = 1080
-width_min = 850
-width_max = 1130
+#region Scanner Summary
 
-lower = 50
-upper = 150
+# This module uses the picamera to take pictures and then uses
+# OpenCV to find the four flat edges around each card's artwork
+# to isolate this artwork and warp the image, producing a 135
+# by 184 pixel image of each card's artwork. This image can then
+# be used with the Card Database module to find a matching card.
+#endregion
 
-def scan_card(img=None):
-    dc = []
+#region Constants and Variables
+
+threshhold    =  127
+
+left_boundary = 1248
+
+height_min    = 1080
+width_min     =  800
+width_max     = 1130
+#endregion
+
+#region Basic Functions
+
+def scan_card():
+    img = None
     cont = None
+    dc = None
 
-    # if no image is provided, take picture up to 8 times until drawing
-    # contours are recognized
-    t = 8
-    if img is not None:
-        t = 1
-    for x in range(t):
+    # take picture up to 8 times until drawing contours are recognized
+    for t in range(8):
         sys.stdout.write('.')
-        if img is None:
-            img = take_picture()
+        img = take_picture()
         cont = get_contours(img)
+        cont.extend(get_contours(cv2.bitwise_not(img)))
+
+        # find drawing countour that fits height and width ranges
+        dc = None
         for c in cont:
-            widtha = math.fabs(c[3][0][0] - c[0][0][0])
-            widthb = math.fabs(c[1][0][0] - c[0][0][0])
+            widtha  = math.fabs(c[3][0][0] - c[0][0][0])
+            widthb  = math.fabs(c[1][0][0] - c[0][0][0])
             heighta = math.fabs(c[1][0][1] - c[0][0][1])
             heightb = math.fabs(c[3][0][1] - c[0][0][1])
             if heighta > height_min and width_max > widtha > width_min:
                 dc = c
+                break
             elif heightb > height_min and width_max > widthb > width_min:
                 dc = c
+                break
 
-        if len(dc) == 4:
+        if dc is not None:
             # apply the four point transform to obtain top-down
-            # views of the original images and resize
+            # views of the original drawing image and resize
             dimg = four_point_transform(img, dc.reshape(4, 2))
             dimg = cv2.resize(dimg, (135, 184))
 
             # rotate clockwise if drawing is on the left
             # or counterclockwise if drawing is on the right
-            # to set images upright
-            dl = False
+            # to set drawing image upright
+            angle = 270
             for x in dc:
-                    #print(x[0][0])
-                    if x[0][0] < 1348:
-                            dl = True
-                            break
-            if dl:
-                    dimg = imutils.rotate_bound(dimg, 90)
-            else:
-                    dimg = imutils.rotate_bound(dimg, 270)
+                if x[0][0] < left_boundary:
+                    angle = 90
+                    break
+            dimg = imutils.rotate_bound(dimg, angle)
 
+            # return picture, all contours, drawing contour, and drawing image
             print('.')
             return [img, cont, dc, dimg]
 
+    # return picture and all contours
     print('.')
     return [img, cont, None, None]
 
@@ -77,26 +92,27 @@ def take_picture():
 
     # Return decoded image
     return cv2.imdecode(buff, 1)
+#endregion
+
+#region Complex Functions
 
 def get_contours(image):
-    output = []
-
-    #for gray in cv2.split(image):
-    # convert the image to grayscale and increase contrast
+    # convert the image to grayscale
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    # equalize histogram to improve contrast
     gray = cv2.equalizeHist(gray)
 
-    # apply automatic Canny edge detection
-    edged = cv2.Canny(gray, lower, upper)
+    # apply midpoint threshold
+    ret, thresh = cv2.threshold(gray, threshhold, 255, 0)
 
-    # find the contours in the edged image, keeping only the
-    # largest ones, and initialize the screen contour
-    cnts = cv2.findContours(edged.copy(), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    # find the contours, keeping only the largest ones
+    cnts = cv2.findContours(thresh.copy(), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
     cnts = cnts[0] if imutils.is_cv2() else cnts[1]
     cnts = sorted(cnts, key = cv2.contourArea, reverse = True)[:5]
 
-    # loop over the contours
-
+    # make empty output list and loop over the contours
+    output = []
     for c in cnts:
         # approximate the contour
         peri = cv2.arcLength(c, True)
@@ -105,32 +121,9 @@ def get_contours(image):
         # if our approximated contour has four points,
         # add it to the list of outputs
         if len(approx) == 4:
-                output.append(approx)
+            output.append(approx)
 
     return output
-
-def order_points(pts):
-    # initialzie a list of coordinates that will be ordered
-    # such that the first entry in the list is the top-left,
-    # the second entry is the top-right, the third is the
-    # bottom-right, and the fourth is the bottom-left
-    rect = np.zeros((4, 2), dtype = "float32")
-
-    # the top-left point will have the smallest sum, whereas
-    # the bottom-right point will have the largest sum
-    s = pts.sum(axis = 1)
-    rect[0] = pts[np.argmin(s)]
-    rect[2] = pts[np.argmax(s)]
-
-    # now, compute the difference between the points, the
-    # top-right point will have the smallest difference,
-    # whereas the bottom-left will have the largest difference
-    diff = np.diff(pts, axis = 1)
-    rect[1] = pts[np.argmin(diff)]
-    rect[3] = pts[np.argmax(diff)]
-
-    # return the ordered coordinates
-    return rect
 
 def four_point_transform(image, pts):
     # obtain a consistent order of the points and unpack them
@@ -169,3 +162,27 @@ def four_point_transform(image, pts):
 
     # return the warped image
     return warped
+
+def order_points(pts):
+    # initialzie a list of coordinates that will be ordered
+    # such that the first entry in the list is the top-left,
+    # the second entry is the top-right, the third is the
+    # bottom-right, and the fourth is the bottom-left
+    rect = np.zeros((4, 2), dtype = "float32")
+
+    # the top-left point will have the smallest sum, whereas
+    # the bottom-right point will have the largest sum
+    s = pts.sum(axis = 1)
+    rect[0] = pts[np.argmin(s)]
+    rect[2] = pts[np.argmax(s)]
+
+    # now, compute the difference between the points, the
+    # top-right point will have the smallest difference,
+    # whereas the bottom-left will have the largest difference
+    diff = np.diff(pts, axis = 1)
+    rect[1] = pts[np.argmin(diff)]
+    rect[3] = pts[np.argmax(diff)]
+
+    # return the ordered coordinates
+    return rect
+#endregion
