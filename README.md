@@ -1,1 +1,1 @@
-Run main.py
+Run card_sorter_main.py
